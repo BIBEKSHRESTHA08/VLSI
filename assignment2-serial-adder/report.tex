@@ -1,0 +1,252 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{charter}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[table]{xcolor}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage[colorlinks=true,linkcolor=accent,urlcolor=accent]{hyperref}
+
+\definecolor{accent}{HTML}{3C3489}
+\definecolor{codebg}{HTML}{F6F6F3}
+\definecolor{kw}{HTML}{185FA5}
+\definecolor{cm}{HTML}{6B6A64}
+\definecolor{okgreen}{HTML}{0F6E56}
+\definecolor{badred}{HTML}{A32D2D}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlist{itemsep=2pt,topsep=4pt}
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\arraystretch}{1.18}
+
+\pagestyle{fancy}\fancyhf{}
+\rhead{\small\color{cm}\reporttag}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\lstdefinelanguage{SV}{
+  morekeywords={module,endmodule,input,output,inout,logic,wire,reg,always_ff,always_comb,assign,
+    begin,end,if,else,case,endcase,default,typedef,enum,localparam,posedge,negedge,or,task,endtask,
+    function,endfunction,automatic,initial,repeat,while,for,integer,string,signed,void},
+  sensitive=true, morecomment=[l]{//}, morecomment=[s]{/*}{*/}, morestring=[b]"}
+\lstdefinelanguage{DCTcl}{
+  morekeywords={set,lappend,define_design_lib,analyze,elaborate,current_design,link,check_design,
+    create_clock,set_input_delay,set_output_delay,set_max_area,compile,report_area,report_timing,
+    report_qor,report_resources,report_constraints,write,write_sdc,set_dont_use,get_lib_cells,puts,gui_start},
+  sensitive=true, morecomment=[l]{\#}}
+\lstset{basicstyle=\ttfamily\footnotesize, backgroundcolor=\color{codebg}, frame=single,
+  rulecolor=\color{codebg}, keywordstyle=\color{kw}\bfseries, commentstyle=\color{cm}\itshape,
+  columns=fullflexible, keepspaces=true, breaklines=true, showstringspaces=false,
+  xleftmargin=4pt, xrightmargin=4pt, aboveskip=6pt, belowskip=6pt}
+
+\newtcolorbox{task}{colback=accent!5,colframe=accent,boxrule=0.6pt,arc=2pt,
+  left=8pt,right=8pt,top=4pt,bottom=4pt,fonttitle=\bfseries,title=The assignment}
+\newtcolorbox{keypoint}[1]{colback=okgreen!6,colframe=okgreen,boxrule=0.6pt,arc=2pt,
+  left=8pt,right=8pt,top=4pt,bottom=4pt,fonttitle=\bfseries,title={#1}}
+\newtcolorbox{lesson}[1]{colback=orange!7,colframe=orange!70!black,boxrule=0.6pt,arc=2pt,
+  left=8pt,right=8pt,top=4pt,bottom=4pt,fonttitle=\bfseries,title={#1}}
+
+\newcommand{\fig}[3]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{figures/#1}\caption{#3}\end{figure}}
+\newcommand{\pass}{\textcolor{okgreen}{\textbf{PASS}}}
+\newcommand{\met}{\textcolor{okgreen}{\textbf{MET}}}
+\newcommand{\viol}{\textcolor{badred}{\textbf{VIOLATED}}}
+
+\newcommand{\header}[3]{%
+  \begin{center}
+  {\small\color{cm} CPE 527 VLSI Design \quad|\quad Lab 2 \quad|\quad University of Alabama in Huntsville}\\[8pt]
+  {\LARGE\bfseries\color{accent} #1}\\[4pt]
+  {\large #2}\\[8pt]
+  {\small Bibek Shrestha \quad|\quad September 2026 \quad|\quad #3}
+  \end{center}\vspace{2pt}\hrule\vspace{6pt}}
+\newcommand{\reporttag}{Lab 2 / Assignment 2: 8-bit bit-serial adder}
+\begin{document}
+\header{8-bit Bit-Serial Adder}{One full adder, eight clock cycles, datapath + FSM}{SystemVerilog, VCS, Design Compiler, SAED 90\,nm}
+
+\begin{task}
+Design a unit that adds two 8-bit operands using a \textbf{single full adder} (bit-serial). One 8-bit bus
+provides A and B; a separate 8-bit bus outputs the result. \texttt{ldA} stores A, \texttt{ldB} stores B and
+starts the addition on the next clock. A carry register can be cleared or set from outside and is visible on
+\texttt{CarryOut}. \texttt{RDY} goes high when the result (in register A) is ready. Split datapath and control,
+write a testbench, synthesize and report as in Assignment 1.
+\end{task}
+
+\section*{At a glance}
+\begin{table}[H]\centering\small
+\begin{tabular}{ll}
+\toprule
+Architecture & datapath + 3-state FSM (IDLE, ADD, DONE) \\
+Flip-flops & 23 \\
+Cell area / total area & 1268.12 / 1332.54 \\
+Clock target & 5 ns \\
+Slack & +1.77 ns \met \\
+Critical path & input \texttt{ldB} $\rightarrow$ control $\rightarrow$ \texttt{bit\_count\_reg[3]} \\
+Latency & 9 clocks from \texttt{ldB} to \texttt{RDY} \\
+RTL and gate-level tests & all \pass \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{How it works}
+\fig{a2_block.png}{0.9}{Block diagram. The control unit tells the datapath what to do; the datapath reports back when 8 bits are done.}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{lcX}
+\toprule
+Part & Bits & Job \\
+\midrule
+\texttt{reg\_a} & 8 & Holds A. Shifts right each step; the new sum bit enters at the top. Ends up holding the result. \\
+\texttt{reg\_b} & 8 & Holds B. Shifts right, presenting the next bit at \texttt{reg\_b[0]}. \\
+Full adder & 1 & \texttt{sum = a0 \^{} b0 \^{} c},\; \texttt{carry = a0\&b0 | a0\&c | b0\&c} \\
+\texttt{carry\_reg} & 1 & Carries between bits. \texttt{clrCarry} clears it, \texttt{setCarry} sets it (carry-in). \\
+\texttt{bit\_count} & 4 & Counts shifts; \texttt{done\_count = (bit\_count == 8)}. \\
+\bottomrule
+\end{tabularx}
+\caption{Datapath parts.}
+\end{table}
+
+\fig{a2_fsm.png}{0.8}{Control unit. It waits in IDLE, adds one bit per clock in ADD, and pulses RDY in DONE.}
+
+\textbf{Synchronous or asynchronous?} Everything changes on the rising clock edge, except the active-low reset
+\texttt{rst\_n}, which is asynchronous (it is in the \texttt{always\_ff} sensitivity list).
+
+\section{Example: 3 + 5, one bit per clock}
+\begin{table}[H]\centering\small
+\begin{tabular}{cccccccc}
+\toprule
+Shift & a0 & b0 & carry in & sum & carry out & \texttt{reg\_a} after & \texttt{reg\_b} after \\
+\midrule
+1 & 1 & 1 & 0 & 0 & 1 & 00000001 & 00000010 \\
+2 & 1 & 0 & 1 & 0 & 1 & 00000000 & 00000001 \\
+3 & 0 & 1 & 1 & 0 & 1 & 00000000 & 00000000 \\
+4 & 0 & 0 & 1 & 1 & 0 & 10000000 & 00000000 \\
+5 to 8 & 0 & 0 & 0 & 0 & 0 & $\dots\rightarrow$ \textbf{00001000} & 00000000 \\
+\bottomrule
+\end{tabular}
+\caption{After 8 shifts register A holds 8.}
+\end{table}
+
+The DVE waveform shows exactly this on \texttt{data\_out}: \texttt{03, 01, 00, 80, 40, 20, 10, 08}.
+
+\fig{a2_wave.png}{1.0}{Simulation of 3+5, 200+100 and 255+1: RDY pulses once per addition and CarryOut goes high for the two overflow cases.}
+
+\textbf{Latency:} 8 shift cycles + 1 cycle to see the counter reach 8 = \textbf{9 clocks} from \texttt{ldB} to \texttt{RDY}.
+
+\section{Testbench and results}
+Stimulus changes on the \emph{falling} edge, so there is no race with the rising edge (the problem seen in Assignment 1).
+Two tasks do a full transaction: \texttt{do\_add} clears the carry first, \texttt{do\_add\_cin} sets it first.
+
+\begin{table}[H]\centering\small
+\begin{tabular}{llllc}
+\toprule
+Test & Expected & RTL & Gate level & \\
+\midrule
+3 + 5 & 8, carry 0 & 8, 0 & 8, 0 & \pass \\
+200 + 100 & 44, carry 1 (300 wraps) & 44, 1 & 44, 1 & \pass \\
+255 + 1 & 0, carry 1 (carry through all bits) & 0, 1 & 0, 1 & \pass \\
+3 + 5 + carry-in & 9, carry 0 & & 9, 0 & \pass \\
+255 + 0 + carry-in & 0, carry 1 & & 0, 1 & \pass \\
+\bottomrule
+\end{tabular}
+\caption{Test results. The carry-in tests were added later to cover \texttt{setCarry} and were run on the synthesized netlist.}
+\end{table}
+
+\section{Synthesis}
+Same flow as Assignment 1, using \texttt{adder\_flow.tcl}: 5\,ns clock, 2\,ns input/output delay,
+\texttt{set\_max\_area 0}, netlist written with \texttt{-hierarchy} so both submodules are kept.
+\begin{lstlisting}[language=bash]
+dc_shell -f adder_flow.tcl
+\end{lstlisting}
+
+\begin{table}[H]\centering\small
+\begin{tabular}{lr@{\hspace{2.5em}}lr}
+\toprule
+\multicolumn{2}{c}{\textbf{Registers}} & \multicolumn{2}{c}{\textbf{Area}} \\
+\midrule
+\texttt{state} & 2 & Combinational & 526.23 \\
+\texttt{bit\_count} & 4 & Flip-flops & 741.89 \\
+\texttt{reg\_a} & 8 & Nets & 64.41 \\
+\texttt{reg\_b} & 8 & \textbf{Cell area} & \textbf{1268.12} \\
+\texttt{carry\_reg} & 1 & \textbf{Total area} & \textbf{1332.54} \\
+\textbf{Total} & \textbf{23} & Cells (comb.\ / seq.) & 51 / 23 \\
+\bottomrule
+\end{tabular}
+\caption{Registers found at elaboration and the area report. Flip-flops are 58\% of the cell area.}
+\end{table}
+
+\subsection*{Critical path}
+\begin{lstlisting}
+input external delay                     2.00       2.00
+ldB (in)                                 0.00       2.00
+u_ctrl/U12/Q (AND2X1)                    0.13       2.13   ld_b = ldB in IDLE
+u_dp/U3, U4 (NOR2X0)                     0.46       2.58
+u_dp/U41, U38, U35 (AO21X1)              0.41       2.99   bit counter logic
+u_dp/U34/Q (AO22X1)                      0.12       3.11
+u_dp/bit_count_reg[3]/D (DFFARX1)        0.03       3.14
+data required time (5.00 - 0.08)                    4.92
+slack (MET)                                         1.77
+\end{lstlisting}
+
+\fig{a2_budget.png}{0.85}{Timing budget. 2.00\,ns is the assumed outside delay; only 1.14\,ns is logic inside the design.}
+
+\begin{keypoint}{The adder is not the critical path}
+A single full adder is only a couple of gates. The slowest path is control: the \texttt{ldB} input going through
+the FSM and into the bit counter. That is the upside of a serial design: very little logic per clock.
+\end{keypoint}
+
+\section{Design Vision}
+\fig{a2_dv_top.png}{0.8}{Synthesized top level: one 8-bit \texttt{data\_in} bus in, one 8-bit \texttt{data\_out} bus out, \texttt{u\_ctrl} and \texttt{u\_dp} connected as designed.}
+\fig{a2_dv_path.png}{0.95}{The critical path: \texttt{ldB} $\rightarrow$ AND gate in the control unit $\rightarrow$ bit counter logic $\rightarrow$ \texttt{bit\_count\_reg[3]}.}
+
+\section{Requirements check}
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{Xlc}
+\toprule
+Requirement & How & \\
+\midrule
+Two 8-bit operands, single full adder, bit-serial & \texttt{reg\_a}, \texttt{reg\_b}, 1-bit adder, 8 shifts & \pass \\
+One shared 8-bit input bus for A and B & \texttt{data\_in[7:0]} & \pass \\
+Separate 8-bit output bus with result from register A & \texttt{data\_out = reg\_a} & \pass \\
+\texttt{ldA} loads A; \texttt{ldB} loads B and starts next clock & FSM IDLE $\rightarrow$ ADD & \pass \\
+Carry clear/set from outside, visible on \texttt{CarryOut} & \texttt{clrCarry}, \texttt{setCarry}, \texttt{carry\_reg} & \pass \\
+\texttt{RDY} when result is ready & DONE state & \pass \\
+Datapath and control unit split & \texttt{datapath}, \texttt{control\_unit} & \pass \\
+Synthesis and reports as in Assignment 1 & baseline done; speed and area runs to do & partial \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Still to do:} run the speed (3\,ns, high/low) and area (5\,ns, medium/high) variants by editing the top
+of \texttt{adder\_flow.tcl}. With only 1.14\,ns of internal logic the path needs $0.4T + 1.14 \le T - 0.08$,
+i.e.\ $T \ge 2.03$\,ns, so the 3\,ns run should pass with about +0.58\,ns slack.
+
+\textbf{Note:} \texttt{data\_out} always shows register A, so it shows moving values during the addition.
+The result is valid when \texttt{RDY} is high.
+
+\section{What I learned}
+\begin{itemize}
+\item Serial arithmetic trades time for hardware: 1 full adder instead of 8, but 9 clocks per addition.
+\item In a serial design the control logic, not the math, can be the slowest path.
+\item Changing testbench inputs on the falling edge makes RTL and gate-level results match exactly.
+\item A \texttt{.tcl} flow script makes synthesis repeatable and keeps every run's reports separate.
+\end{itemize}
+
+\appendix
+\section{Source files}
+\subsection*{RTL: \texttt{src/assignment2.sv}}
+\lstinputlisting[language=SV]{src/assignment2.sv}
+\subsection*{Testbench: \texttt{src/assignment2\_tb.sv}}
+\lstinputlisting[language=SV]{src/assignment2_tb.sv}
+\subsection*{Synthesis script: \texttt{src/adder\_flow.tcl}}
+\lstinputlisting[language=DCTcl]{src/adder_flow.tcl}
+\end{document}

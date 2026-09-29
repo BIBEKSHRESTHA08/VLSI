@@ -1,0 +1,309 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{charter}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[table]{xcolor}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage[colorlinks=true,linkcolor=accent,urlcolor=accent]{hyperref}
+
+\definecolor{accent}{HTML}{3C3489}
+\definecolor{codebg}{HTML}{F6F6F3}
+\definecolor{kw}{HTML}{185FA5}
+\definecolor{cm}{HTML}{6B6A64}
+\definecolor{okgreen}{HTML}{0F6E56}
+\definecolor{badred}{HTML}{A32D2D}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlist{itemsep=2pt,topsep=4pt}
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\arraystretch}{1.18}
+
+\pagestyle{fancy}\fancyhf{}
+\rhead{\small\color{cm}\reporttag}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\lstdefinelanguage{SV}{
+  morekeywords={module,endmodule,input,output,inout,logic,wire,reg,always_ff,always_comb,assign,
+    begin,end,if,else,case,endcase,default,typedef,enum,localparam,posedge,negedge,or,task,endtask,
+    function,endfunction,automatic,initial,repeat,while,for,integer,string,signed,void},
+  sensitive=true, morecomment=[l]{//}, morecomment=[s]{/*}{*/}, morestring=[b]"}
+\lstdefinelanguage{DCTcl}{
+  morekeywords={set,lappend,define_design_lib,analyze,elaborate,current_design,link,check_design,
+    create_clock,set_input_delay,set_output_delay,set_max_area,compile,report_area,report_timing,
+    report_qor,report_resources,report_constraints,write,write_sdc,set_dont_use,get_lib_cells,puts,gui_start},
+  sensitive=true, morecomment=[l]{\#}}
+\lstset{basicstyle=\ttfamily\footnotesize, backgroundcolor=\color{codebg}, frame=single,
+  rulecolor=\color{codebg}, keywordstyle=\color{kw}\bfseries, commentstyle=\color{cm}\itshape,
+  columns=fullflexible, keepspaces=true, breaklines=true, showstringspaces=false,
+  xleftmargin=4pt, xrightmargin=4pt, aboveskip=6pt, belowskip=6pt}
+
+\newtcolorbox{task}{colback=accent!5,colframe=accent,boxrule=0.6pt,arc=2pt,
+  left=8pt,right=8pt,top=4pt,bottom=4pt,fonttitle=\bfseries,title=The assignment}
+\newtcolorbox{keypoint}[1]{colback=okgreen!6,colframe=okgreen,boxrule=0.6pt,arc=2pt,
+  left=8pt,right=8pt,top=4pt,bottom=4pt,fonttitle=\bfseries,title={#1}}
+\newtcolorbox{lesson}[1]{colback=orange!7,colframe=orange!70!black,boxrule=0.6pt,arc=2pt,
+  left=8pt,right=8pt,top=4pt,bottom=4pt,fonttitle=\bfseries,title={#1}}
+
+\newcommand{\fig}[3]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{figures/#1}\caption{#3}\end{figure}}
+\newcommand{\pass}{\textcolor{okgreen}{\textbf{PASS}}}
+\newcommand{\met}{\textcolor{okgreen}{\textbf{MET}}}
+\newcommand{\viol}{\textcolor{badred}{\textbf{VIOLATED}}}
+
+\newcommand{\header}[3]{%
+  \begin{center}
+  {\small\color{cm} CPE 527 VLSI Design \quad|\quad Lab 2 \quad|\quad University of Alabama in Huntsville}\\[8pt]
+  {\LARGE\bfseries\color{accent} #1}\\[4pt]
+  {\large #2}\\[8pt]
+  {\small Bibek Shrestha \quad|\quad September 2026 \quad|\quad #3}
+  \end{center}\vspace{2pt}\hrule\vspace{6pt}}
+\newcommand{\reporttag}{Lab 2 / Assignment 3: MSP430 hardware multiplier}
+\begin{document}
+\header{MSP430 Hardware Multiplier Accelerator}{MPY, MPYS, MAC and MACS over a 16-bit bus}{SystemVerilog, VCS, Design Compiler, SAED 90\,nm}
+
+\begin{task}
+Design and test a hardware multiplier for the MSP430 that supports unsigned (MPY) and signed (MPYS) multiply,
+and unsigned (MAC) and signed (MACS) multiply-accumulate. The CPU picks the mode and first operand by writing to
+0x0130 / 0x0132 / 0x0134 / 0x0136. Writing the second operand to 0x0138 starts the operation. The 32-bit result
+is read at 0x013A (low 16 bits) and 0x013C (high 16 bits). Ports: \texttt{clk}, \texttt{reset\_n} (active low),
+16-bit \texttt{addr}, 16-bit bidirectional \texttt{data\_bus}, \texttt{write\_enable}, \texttt{read\_enable},
+and output \texttt{busy}. Write a testbench that verifies the design thoroughly.
+\end{task}
+
+\section*{At a glance}
+\begin{table}[H]\centering\small
+\begin{tabular}{ll}
+\toprule
+Method & 16-cycle shift-and-add on magnitudes, sign fixed at the end \\
+Flip-flops / cells & 153 / 881 \\
+Area (cell / total) & 12677.53 / 13462.00 \\
+Clock & 7 ns ($\approx$143 MHz), slack 0.00 ns \met \\
+Critical path & \texttt{mcand\_reg[0]} $\rightarrow$ 32-bit adder $\rightarrow$ \texttt{product\_reg[31]} \\
+Busy time & 18 clocks per operation \\
+Tests & 228 (RTL) and 228 (gate level), \textbf{0 errors} \\
+Tri-state check & 0 BSLEX cells, 16 TNBUFFX cells \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{The four modes}
+All four multiply two 16-bit numbers into a 32-bit result. They differ in two ways: are the numbers signed,
+and does the new product replace the result or add to it?
+
+\begin{table}[H]\centering\small
+\begin{tabular}{llllc}
+\toprule
+Mode & op1 address & Numbers & Result & \texttt{mode[1:0]} \\
+\midrule
+MPY & 0x0130 & unsigned & result = a $\times$ b & 00 \\
+MPYS & 0x0132 & signed & result = a $\times$ b & 01 \\
+MAC & 0x0134 & unsigned & result = result + a $\times$ b & 10 \\
+MACS & 0x0136 & signed & result = result + a $\times$ b & 11 \\
+\midrule
+OP2 & 0x0138 & \multicolumn{3}{l}{write op2 and \textbf{start}} \\
+RESL / RESH & 0x013A / 0x013C & \multicolumn{3}{l}{read result[15:0] / result[31:16]} \\
+\bottomrule
+\end{tabular}
+\caption{Register map. Mode bit 0 = signed, bit 1 = accumulate (it equals address bits [2:1]).}
+\end{table}
+
+Example of why signed matters: \texttt{0xFFFF} is 65535 unsigned but $-1$ signed.
+MPY gives $65535 \times 65535 = \texttt{0xFFFE0001}$; MPYS gives $(-1)\times(-1) = \texttt{0x00000001}$.
+
+\section{Design}
+\fig{arch.png}{0.85}{Architecture: a bus interface and registers on the CPU side, a control FSM and a datapath on the compute side.}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+Module & Job & Registers \\
+\midrule
+\texttt{mult430} (top) & Address decoder, op1/op2/mode registers, read mux, tri-state \texttt{data\_bus} & 34 \\
+\texttt{mult430\_ctrl} & FSM and step counter, drives \texttt{busy} & 6 \\
+\texttt{mult430\_dp} & Magnitudes, shift-and-add, sign fix, accumulate & 113 \\
+\bottomrule
+\end{tabularx}
+\caption{Three modules, 153 flip-flops in total.}
+\end{table}
+
+\subsection*{How one multiplier handles all four modes}
+\begin{enumerate}
+\item \textbf{Signed modes:} make negative operands positive ($|x| = \sim x + 1$) and remember if the signs differ.
+\item \textbf{Multiply} the two positive numbers with shift-and-add, one bit per clock, 16 clocks.
+\item \textbf{Fix the sign:} if the signs differed, negate the product.
+\item \textbf{Accumulate modes:} add the product to the old result instead of replacing it.
+\end{enumerate}
+\fig{a3_algo.png}{0.72}{One operation from start to finish.}
+\fig{a3_fsm.png}{0.85}{Control FSM. \texttt{busy} is high in every state except IDLE: 1 + 16 + 1 = 18 clocks.}
+
+\subsection*{Worked example: MPY 3 $\times$ 5}
+\begin{table}[H]\centering\small
+\begin{tabular}{ccccc}
+\toprule
+Step & multiplier bit & Action & product & multiplicand after \\
+\midrule
+1 & 1 & add 3 & 3 & 6 \\
+2 & 0 & skip & 3 & 12 \\
+3 & 1 & add 12 & 15 & 24 \\
+4 to 16 & 0 & skip & 15 & \dots \\
+\bottomrule
+\end{tabular}
+\caption{Shift-and-add. For MPYS $-3 \times 5$ the same steps give 15, then negation gives \texttt{0xFFFFFFF1} = $-15$.}
+\end{table}
+
+\subsection*{The shared bus}
+The data bus is used by both sides, so only one may drive it at a time. The multiplier drives it only during a
+read of 0x013A or 0x013C; otherwise it lets go (\texttt{z}). Writes are ignored while \texttt{busy} is high.
+\begin{lstlisting}[language=SV]
+assign wr_ok    = write_enable && !read_enable && !busy;
+assign start    = wr_ok && (addr == ADDR_OP2);
+assign data_bus = rd_en ? rd_data : 16'bz;   // tri-state driver
+\end{lstlisting}
+
+\section{Testbench}
+The testbench acts as the CPU. \texttt{cpu\_write} and \texttt{cpu\_read} perform bus cycles,
+a small software model computes the expected answer, and every result is checked automatically.
+Inputs change on the falling clock edge to avoid races.
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{lcXc}
+\toprule
+Group & Tests & What it checks & \\
+\midrule
+MPY / MPYS / MAC / MACS & 11 & Each mode, largest values, $-32768 \times -32768$, accumulation up and down & \pass \\
+Write while busy & 1 & A MAC write during an MPY is ignored (0x31, not 0x72) & \pass \\
+Bus released & 2 & \texttt{data\_bus} is \texttt{z} when idle and on a non-result read & \pass \\
+Mode switching & 5 & The mode never ``sticks'' from the previous operation & \pass \\
+Overflow & 5 & The 32-bit accumulator wraps around both ways & \pass \\
+Reset mid-operation & 4 & \texttt{busy} drops instantly, result cleared, then works again & \pass \\
+Random & 200 & All modes, seed 430, biased to 0000/FFFF/8000/7FFF & \pass \\
+\midrule
+\textbf{Total} & \textbf{228} & & \textbf{0 errors} \\
+\bottomrule
+\end{tabularx}
+\caption{Test plan. The random split was MPY 51, MPYS 48, MAC 53, MACS 48.}
+\end{table}
+
+\begin{table}[H]\centering\small
+\begin{tabular}{lcc}
+\toprule
+Operation & Product & Result \\
+\midrule
+MPYS 0 $\times$ $-1$ & 0 & 0x00000000 \\
+MAC 2 $\times$ 10 & +20 & 0x00000014 \\
+MAC 4 $\times$ 10 & +40 & 0x0000003C \\
+MACS $-2$ $\times$ 10 & $-20$ & 0x00000028 \\
+MACS $-5$ $\times$ $-5$ & +25 & 0x00000041 \\
+\bottomrule
+\end{tabular}
+\caption{MAC and MACS keep a running total in the same result register.}
+\end{table}
+
+\fig{wave12_mpys.png}{1.0}{MPYS $-3\times5$: \texttt{busy} goes high after the op2 write; the two reads return \texttt{fff1} and \texttt{ffff} = \texttt{0xFFFFFFF1}.}
+\fig{wave_full.png}{1.0}{The full run: \texttt{tests} reaches 228 and \texttt{errors} stays 0.}
+
+\section{Synthesis}
+\subsection*{Tri-state fix}
+The TA warned that Design Compiler may build the tri-state bus from \texttt{BSLEX} cells, which ignore the enable
+and act like inverters (3 + 5 would read as 247). Blocking them leaves the correct \texttt{TNBUFFX} cells:
+\begin{lstlisting}[language=DCTcl]
+set_dont_use [get_lib_cells */BSLEX1]
+set_dont_use [get_lib_cells */BSLEX2]
+set_dont_use [get_lib_cells */BSLEX4]
+\end{lstlisting}
+
+\subsection*{Getting timing to pass}
+\begin{table}[H]\centering\small
+\begin{tabular}{lccc}
+\toprule
+ & 5 ns & 5 ns, speed effort & \textbf{7 ns (final)} \\
+\midrule
+Slack & $-1.29$ \viol & $-1.37$ \viol & \textbf{0.00} \met \\
+Violating paths & 19 & 17 & 0 \\
+Critical path & 6.21 ns & 6.29 ns & 6.91 ns \\
+Cells & 998 & 1019 & 881 \\
+Design area & 14542.17 & 14666.44 & 13462.00 \\
+\bottomrule
+\end{tabular}
+\caption{The 32-bit ripple-carry adder needs about 6.3\,ns, so 5\,ns could not pass. The spec gives no clock speed, so I used 7\,ns.}
+\end{table}
+
+\fig{a3_budget.png}{0.85}{Critical-path timing at 5\,ns and 7\,ns.}
+
+At 7\,ns the path is slightly \emph{longer} (6.91\,ns) but still passes. With \texttt{set\_max\_area 0}, DC uses
+spare time to pick smaller, slower gates, which also cut the area by about 1080 units.
+
+\begin{table}[H]\centering\small
+\begin{tabular}{lr}
+\toprule
+Combinational area & 7521.18 \\
+Flip-flop area & 5156.35 \\
+Net area & 784.47 \\
+\textbf{Total} & \textbf{13462.00} \\
+\bottomrule
+\end{tabular}
+\caption{Area at 7\,ns.}
+\end{table}
+
+\begin{keypoint}{Critical path}
+\texttt{u\_dp/mcand\_reg[0]} $\rightarrow$ 32-bit ripple-carry adder (\texttt{product + mcand}) $\rightarrow$
+\texttt{u\_dp/product\_reg[31]}. 53 logic levels, 6.91\,ns, slack 0.00\,ns at 7\,ns ($\approx$143\,MHz).
+\end{keypoint}
+
+\section{Gate-level check}
+\begin{lstlisting}[language=bash]
+grep -c BSLEX  output/assignment3_synth.v     # 0
+grep -c TNBUFF output/assignment3_synth.v     # 16 (one per data_bus bit)
+./ps_sim/assignment3_synth.simv               # 228 tests, 0 errors
+\end{lstlisting}
+The netlist passes the same 228 tests with the same random split. The bus-release tests passing on real gates
+shows the tri-state fix worked.
+
+\section{Design Vision}
+\fig{a3_dv_symbol.png}{0.6}{The synthesized block has exactly the ports in the spec; \texttt{data\_bus} shows the two-way arrow of an \texttt{inout}.}
+\fig{a3_dv_path.png}{0.95}{The critical path: the staircase is the 32-bit carry chain.}
+\fig{dv_paths.png}{0.95}{Slack of the 50 worst paths: none negative. The worst ones end at \texttt{product\_reg[31]} and \texttt{result\_reg[31]}.}
+
+\section{Choices I made}
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{lX}
+\toprule
+Clock & 7\,ns, because 5\,ns failed and the spec sets no speed \\
+Writes during busy & Ignored, so an operation cannot be corrupted \\
+Accumulator & One shared 32-bit result; MPY/MPYS overwrite, MAC/MACS add \\
+Overflow & Wraps at 32 bits (no overflow flag in the spec) \\
+Data bus & Real \texttt{inout} with the BSLEX fix \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{What I learned}
+\begin{itemize}
+\item One unsigned multiplier plus a sign fix covers all four modes.
+\item A wide adder sets the clock speed: 32-bit ripple carry limited the design to about 143\,MHz.
+      Adding 16 bits per step instead would be the next improvement.
+\item A test is only useful if it can fail: the write-while-busy test writes to the MAC address for that reason.
+\item Always check the netlist for known bad cells (BSLEX) and re-run the full testbench on the gates.
+\end{itemize}
+
+\appendix
+\section{Source files}
+\subsection*{RTL: \texttt{src/assignment3.sv}}
+\lstinputlisting[language=SV]{src/assignment3.sv}
+\subsection*{Testbench: \texttt{src/assignment3\_tb.sv}}
+\lstinputlisting[language=SV]{src/assignment3_tb.sv}
+\subsection*{Synthesis script: \texttt{src/syn.tcl}}
+\lstinputlisting[language=DCTcl]{src/syn.tcl}
+\end{document}
