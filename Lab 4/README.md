@@ -4,7 +4,7 @@ Full design flow for an 8-bit serial-parallel multiplier, from RTL all the way t
 
 CPE 527 VLSI Design, UAH, Fall 2026
 
-Report: [report.pdf](report.pdf)
+Report: [Lab4_Mult8U_report.pdf](Lab4_Mult8U_report.pdf)
 
 ## What I did
 
