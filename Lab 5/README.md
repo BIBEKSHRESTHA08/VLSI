@@ -4,7 +4,7 @@ Custom (transistor level) design in Synopsys Custom Compiler. Drew the schematic
 
 CPE 527 VLSI Design, UAH, Fall 2026
 
-Report: [vlsi_lab5_1.pdf](vlsi_lab5_1.pdf)
+Report: [vlsi_lab5 (1).pdf](vlsi_lab5%20(1).pdf)
 
 ## What I did
 
