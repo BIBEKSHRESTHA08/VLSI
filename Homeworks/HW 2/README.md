@@ -1,8 +1,8 @@
-# VLSI Homework 2
+# VLSI Homework 2 (Modules 7 & 8)
 
 CPE 527 VLSI Design, UAH, Fall 2026
 
-Handwritten solutions, scanned: [HW.2_bs0207.pdf](HW.2_bs0207.pdf)
+Handwritten solutions, scanned: [module 7 & 8 HW.2_bs0207.pdf](module%207%20%26%208%20HW.2_bs0207.pdf)
 
 ## Topics
 
